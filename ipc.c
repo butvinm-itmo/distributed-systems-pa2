@@ -8,14 +8,21 @@
 #include <time.h>
 #include <unistd.h>
 
+#define spin()                                                   \
+    do {                                                         \
+        struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000 }; \
+        nanosleep(&ts, NULL);                                    \
+    } while (0)
+
 static int _write_all(int fd, const char* buf, size_t size);
 
 static int _read_all(int fd, char* buf, size_t size);
 
 int send(void* self, local_id dst, const Message* msg) {
     Worker* s = self;
-    assert((s->id != dst) && "Send to self");
     int res;
+    assert((s->id != dst) && "Send to self");
+    assert((msg->s_header.s_payload_len <= MAX_PAYLOAD_LEN) && "Message payload len is bigger than MAX_PAYLOAD_LEN");
 
     res = _write_all(s->chs[dst].write_fd, (const char*)msg, sizeof(msg->s_header) + msg->s_header.s_payload_len);
     if (res != 0) return res;
@@ -66,14 +73,17 @@ int receive_any(void* self, Message* msg) {
                 if (res != 0) return res;
 
                 return 0;
-            } else if (recv == 0 || errno == EAGAIN || errno == EINTR) {
-                struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000 }; // sorry
-                nanosleep(&ts, NULL);
-                continue;
-            } else {
-                return -1;
+            } else if (recv < 0) {
+                if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                    continue;
+                } else if (errno == EINTR) {
+                    nbr_id--;
+                } else {
+                    return -1;
+                }
             }
         }
+        spin();
     }
     return 0;
 }
@@ -84,10 +94,15 @@ static int _read_all(int fd, char* buf, size_t size) {
         ssize_t recv = read(fd, buf + recv_total, size - recv_total);
         if (recv > 0) {
             recv_total += recv;
-        } else if (recv == 0 || errno == EAGAIN || errno == EINTR) {
-            struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000 }; // sorry
-            nanosleep(&ts, NULL);
-            continue;
+        } else if (recv < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                spin();
+                continue;
+            } else if (errno == EINTR) {
+                continue;
+            } else {
+                return -1;
+            }
         } else {
             return -1;
         }
@@ -101,10 +116,15 @@ static int _write_all(int fd, const char* buf, size_t size) {
         ssize_t sent = write(fd, buf + sent_total, size - sent_total);
         if (sent > 0) {
             sent_total += sent;
-        } else if (sent == 0 || errno == EAGAIN || errno == EINTR) {
-            struct timespec ts = { .tv_sec = 0, .tv_nsec = 100000 }; // sorry
-            nanosleep(&ts, NULL);
-            continue;
+        } else if (sent < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                spin();
+                continue;
+            } else if (errno == EINTR) {
+                continue;
+            } else {
+                return -1;
+            }
         } else {
             return -1;
         }
