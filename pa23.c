@@ -12,7 +12,7 @@
 #include "banking.h"
 #include "common.h"
 #include "ipc.h"
-#include "pa1.h"
+#include "pa2345.h"
 #include "worker.h"
 
 #define defer_return(r) \
@@ -33,104 +33,122 @@ typedef struct {
 } BankAccountWorker;
 
 int execute_bank_account_worker(BankAccountWorker s) {
-    Worker* w = s.worker;
+    timestamp_t timestamp;
     Message msg;
     size_t started = 0;
     size_t done = 0;
 
-    msg = (Message) { .s_header = { .s_magic = MESSAGE_MAGIC, .s_type = STARTED, .s_local_time = w->id } };
-    sprintf(msg.s_payload, log_started_fmt, w->id, getpid(), getppid());
+    timestamp = get_physical_time();
+    msg = (Message) { .s_header = { .s_magic = MESSAGE_MAGIC, .s_type = STARTED, .s_local_time = timestamp } };
+    sprintf(msg.s_payload, log_started_fmt, timestamp, s.worker->id, getpid(), getppid(), s.balance->s_balance);
     msg.s_header.s_payload_len = strlen(msg.s_payload);
-    if (send_multicast(w, &msg) != 0) {
-        fprintf(w->events_log, "Process %1d failed to multicast STARTED message: %s\n", w->id, strerror(errno));
-        fprintf(stderr, "Process %1d failed to multicast STARTED message: %s\n", w->id, strerror(errno));
-        fflush(w->events_log);
+    if (send_multicast(s.worker, &msg) != 0) {
+        fprintf(s.worker->events_log, "Process %1d failed to multicast STARTED message: %s\n", s.worker->id, strerror(errno));
+        fprintf(stderr, "Process %1d failed to multicast STARTED message: %s\n", s.worker->id, strerror(errno));
+        fflush(s.worker->events_log);
         return 1;
     }
-    fwrite(msg.s_payload, sizeof(char), msg.s_header.s_payload_len, w->events_log);
+    fwrite(msg.s_payload, sizeof(char), msg.s_header.s_payload_len, s.worker->events_log);
     fwrite(msg.s_payload, sizeof(char), msg.s_header.s_payload_len, stdout);
-    fflush(w->events_log);
+    fflush(s.worker->events_log);
 
-    while (started != w->nbr_count - 1) {
-        if (receive_any(w, &msg) != 0) {
-            fprintf(w->events_log, "Process %1d failed to receive message: %s\n", w->id, strerror(errno));
-            fprintf(stderr, "Process %1d failed to receive message: %s\n", w->id, strerror(errno));
-            fflush(w->events_log);
+    while (started != s.worker->nbr_count - 1) {
+        if (receive_any(s.worker, &msg) != 0) {
+            fprintf(s.worker->events_log, "Process %1d failed to receive message: %s\n", s.worker->id, strerror(errno));
+            fprintf(stderr, "Process %1d failed to receive message: %s\n", s.worker->id, strerror(errno));
+            fflush(s.worker->events_log);
             return 1;
         }
         if (msg.s_header.s_type == STARTED) started++;
         if (msg.s_header.s_type == DONE) done++;
     }
-    fprintf(w->events_log, log_received_all_started_fmt, w->id);
-    fprintf(stdout, log_received_all_started_fmt, w->id);
-    fflush(w->events_log);
+    timestamp = get_physical_time();
+    fprintf(s.worker->events_log, log_received_all_started_fmt, timestamp, s.worker->id);
+    fprintf(stdout, log_received_all_started_fmt, timestamp, s.worker->id);
+    fflush(s.worker->events_log);
 
-    msg = (Message) { .s_header = { .s_magic = MESSAGE_MAGIC, .s_type = DONE, .s_local_time = w->id } };
-    sprintf(msg.s_payload, log_done_fmt, w->id);
+    timestamp = get_physical_time();
+    msg = (Message) { .s_header = { .s_magic = MESSAGE_MAGIC, .s_type = DONE, .s_local_time = timestamp } };
+    sprintf(msg.s_payload, log_done_fmt, timestamp, s.worker->id, s.balance->s_balance);
     msg.s_header.s_payload_len = strlen(msg.s_payload);
-    if (send_multicast(w, &msg) != 0) {
-        fprintf(w->events_log, "Process %1d failed to multicast DONE message: %s\n", w->id, strerror(errno));
-        fprintf(stderr, "Process %1d failed to multicast DONE message: %s\n", w->id, strerror(errno));
-        fflush(w->events_log);
+    if (send_multicast(s.worker, &msg) != 0) {
+        fprintf(s.worker->events_log, "Process %1d failed to multicast DONE message: %s\n", s.worker->id, strerror(errno));
+        fprintf(stderr, "Process %1d failed to multicast DONE message: %s\n", s.worker->id, strerror(errno));
+        fflush(s.worker->events_log);
         return 1;
     }
-    fwrite(msg.s_payload, sizeof(char), msg.s_header.s_payload_len, w->events_log);
+    fwrite(msg.s_payload, sizeof(char), msg.s_header.s_payload_len, s.worker->events_log);
     fwrite(msg.s_payload, sizeof(char), msg.s_header.s_payload_len, stdout);
-    fflush(w->events_log);
+    fflush(s.worker->events_log);
 
-    while (done != w->nbr_count - 1) {
-        if (receive_any(w, &msg) != 0) {
-            fprintf(w->events_log, "Process %1d failed to receive message: %s\n", w->id, strerror(errno));
-            fprintf(stderr, "Process %1d failed to receive message: %s\n", w->id, strerror(errno));
-            fflush(w->events_log);
+    while (done != s.worker->nbr_count - 1) {
+        if (receive_any(s.worker, &msg) != 0) {
+            fprintf(s.worker->events_log, "Process %1d failed to receive message: %s\n", s.worker->id, strerror(errno));
+            fprintf(stderr, "Process %1d failed to receive message: %s\n", s.worker->id, strerror(errno));
+            fflush(s.worker->events_log);
             return 1;
         }
         if (msg.s_header.s_type == DONE) done++;
     }
-    fprintf(w->events_log, log_received_all_done_fmt, w->id);
-    fprintf(stdout, log_received_all_done_fmt, w->id);
-    fflush(w->events_log);
+    timestamp = get_physical_time();
+    fprintf(s.worker->events_log, log_received_all_done_fmt, timestamp, s.worker->id);
+    fprintf(stdout, log_received_all_done_fmt, timestamp, s.worker->id);
+    fflush(s.worker->events_log);
 
     return 0;
 }
 
 int execute_bank_client_worker(BankClientWorker s) {
-    Worker* w = s.worker;
+    timestamp_t timestamp;
     Message msg;
     size_t started = 0;
     size_t done = 0;
 
-    while (started != w->nbr_count) {
-        if (receive_any(w, &msg) != 0) {
-            fprintf(w->events_log, "Process %1d failed to receive message: %s\n", w->id, strerror(errno));
-            fprintf(stderr, "Process %1d failed to receive message: %s\n", w->id, strerror(errno));
-            fflush(w->events_log);
+    while (started != s.worker->nbr_count) {
+        if (receive_any(s.worker, &msg) != 0) {
+            fprintf(s.worker->events_log, "Process %1d failed to receive message: %s\n", s.worker->id, strerror(errno));
+            fprintf(stderr, "Process %1d failed to receive message: %s\n", s.worker->id, strerror(errno));
+            fflush(s.worker->events_log);
             return 1;
         }
         if (msg.s_header.s_type == STARTED) started++;
         if (msg.s_header.s_type == DONE) done++;
     }
-    fprintf(w->events_log, log_received_all_started_fmt, w->id);
-    fprintf(stdout, log_received_all_started_fmt, w->id);
-    fflush(w->events_log);
+    timestamp = get_physical_time();
+    fprintf(s.worker->events_log, log_received_all_started_fmt, timestamp, s.worker->id);
+    fprintf(stdout, log_received_all_started_fmt, timestamp, s.worker->id);
+    fflush(s.worker->events_log);
 
-    while (done != w->nbr_count) {
-        if (receive_any(w, &msg) != 0) {
-            fprintf(w->events_log, "Process %1d failed to receive message: %s\n", w->id, strerror(errno));
-            fprintf(stderr, "Process %1d failed to receive message: %s\n", w->id, strerror(errno));
-            fflush(w->events_log);
+    bank_robbery(&s, s.worker->nbr_count + 1);
+
+    timestamp = get_physical_time();
+    msg = (Message) { .s_header = { .s_magic = MESSAGE_MAGIC, .s_type = STOP, .s_local_time = timestamp } };
+    if (send_multicast(s.worker, &msg) != 0) {
+        fprintf(s.worker->events_log, "Process %1d failed to multicast STOP message: %s\n", s.worker->id, strerror(errno));
+        fprintf(stderr, "Process %1d failed to multicast STOP message: %s\n", s.worker->id, strerror(errno));
+        fflush(s.worker->events_log);
+        return 1;
+    }
+
+    while (done != s.worker->nbr_count) {
+        if (receive_any(s.worker, &msg) != 0) {
+            fprintf(s.worker->events_log, "Process %1d failed to receive message: %s\n", s.worker->id, strerror(errno));
+            fprintf(stderr, "Process %1d failed to receive message: %s\n", s.worker->id, strerror(errno));
+            fflush(s.worker->events_log);
             return 1;
         }
         if (msg.s_header.s_type == DONE) done++;
     }
-    fprintf(w->events_log, log_received_all_done_fmt, w->id);
-    fprintf(stdout, log_received_all_done_fmt, w->id);
-    fflush(w->events_log);
+    timestamp = get_physical_time();
+    fprintf(s.worker->events_log, log_received_all_done_fmt, timestamp, s.worker->id);
+    fprintf(stdout, log_received_all_done_fmt, timestamp, s.worker->id);
+    fflush(s.worker->events_log);
 
     return 0;
 }
 
 void transfer(void* parent_data, local_id src, local_id dst, balance_t amount) {
+    printf("Will transfer $%d from %1d to %1d\n", amount, src, dst);
 }
 
 typedef struct {
@@ -162,7 +180,7 @@ CliArgs arg_parse(int argc, char** argv) {
         fprintf(stderr, "error: Process and balances number mismatch\n");
         return args;
     }
-    for (int i = PARENT_ID; i <= args.bank_account_workers_count; i++) {
+    for (int i = PARENT_ID + 1; i <= args.bank_account_workers_count; i++) {
         args.initial_balances[i] = atoi(argv[3 + i - 1]);
         if (args.initial_balances[i] <= 0) {
             fprintf(stderr, "error: Balance must be a positive integer\n");
